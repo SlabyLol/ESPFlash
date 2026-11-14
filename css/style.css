@@ -476,3 +476,10 @@ input:focus {
   min-width: 3.2rem;
   text-align: right;
 }
+
+
+html.no-serial #app-root {
+  pointer-events: none;
+  filter: blur(2px);
+  user-select: none;
+}
