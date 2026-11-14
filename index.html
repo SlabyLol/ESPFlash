@@ -9,7 +9,6 @@
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="css/style.css" />
 
-  <!-- Import map required by esptool-js unbundled ESM build -->
   <script type="importmap">
   {
     "imports": {
@@ -20,15 +19,15 @@
   </script>
 </head>
 <body>
-  <!-- Unsupported browser screen -->
-  <div id="unsupported" class="overlay hidden">
+  <!-- Unsupported browser screen – shown immediately by inline script below -->
+  <div id="unsupported" class="overlay" style="display:none" role="alertdialog" aria-modal="true" aria-labelledby="unsupported-title">
     <div class="unsupported-card">
       <div class="logo-large">
         <svg viewBox="0 0 64 64" width="72" height="72" aria-hidden="true">
           <path fill="#38bdf8" d="M32 4 L28 28 L12 28 L32 60 L36 36 L52 36 Z"/>
         </svg>
       </div>
-      <h1>Browser Not Supported</h1>
+      <h1 id="unsupported-title">Browser Not Supported</h1>
       <p>
         ESPFlash requires the <strong>Web Serial API</strong>.
         Please use a recent desktop version of
@@ -39,6 +38,27 @@
     </div>
   </div>
 
+  <!-- Synchronous check: runs before any module, works even if esptool-js fails to load -->
+  <script>
+    (function () {
+      var supported = typeof navigator !== "undefined" && "serial" in navigator;
+      var el = document.getElementById("unsupported");
+      if (!supported) {
+        el.style.display = "flex";
+        document.documentElement.classList.add("no-serial");
+        document.body.style.overflow = "hidden";
+      } else {
+        el.style.display = "none";
+        // Load main app only when Web Serial exists
+        var s = document.createElement("script");
+        s.type = "module";
+        s.src = "js/app.js";
+        document.head.appendChild(s);
+      }
+    })();
+  </script>
+
+  <div id="app-root">
   <header class="header">
     <div class="brand">
       <svg class="logo" viewBox="0 0 64 64" width="36" height="36" aria-hidden="true">
@@ -170,7 +190,6 @@
     </p>
     <p class="footer-note">GitHub Pages ready · Open source</p>
   </footer>
-
-  <script type="module" src="js/app.js"></script>
+  </div>
 </body>
 </html>
