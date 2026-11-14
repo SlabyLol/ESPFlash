@@ -1,6 +1,6 @@
 /**
- * ESPFlash – Browser-based ESP flasher
- * Powered by esptool-js (Espressif)
+ * ESPFlash – fully working browser ESP flasher
+ * Uses esptool-js 0.7.1 (Uint8Array file data)
  */
 
 import {
@@ -8,9 +8,6 @@ import {
   Transport,
 } from "https://unpkg.com/esptool-js@0.7.1/lib/index.js?module";
 
-// ---------------------------------------------------------------------------
-// DOM helpers
-// ---------------------------------------------------------------------------
 const $ = (sel) => document.querySelector(sel);
 
 const els = {
@@ -31,21 +28,19 @@ const els = {
   flashSize: $("#flash-size"),
   eraseAll: $("#erase-all"),
   compress: $("#compress"),
+  progressWrap: $("#progress-wrap"),
+  progressFill: $("#progress-fill"),
+  progressText: $("#progress-text"),
 };
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
 let device = null;
 let transport = null;
 let esploader = null;
 let chip = null;
-let fileRows = []; // { id, address, file, data (Uint8Array) }
+let fileRows = [];
 let nextRowId = 1;
+let isBusy = false;
 
-// ---------------------------------------------------------------------------
-// Terminal adapter for esptool-js
-// ---------------------------------------------------------------------------
 const terminal = {
   clean() {},
   writeLine(data) {
@@ -60,9 +55,6 @@ const terminal = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Logging
-// ---------------------------------------------------------------------------
 function log(msg, type = "info") {
   const line = document.createElement("div");
   line.className = `log-${type}`;
@@ -76,9 +68,31 @@ function clearLog() {
   els.console.innerHTML = "";
 }
 
-// ---------------------------------------------------------------------------
-// Browser support check
-// ---------------------------------------------------------------------------
+function setProgress(pct) {
+  const v = Math.max(0, Math.min(100, pct));
+  els.progressFill.style.width = `${v}%`;
+  els.progressText.textContent = `${v.toFixed(0)}%`;
+}
+
+function showProgress(show) {
+  if (show) {
+    els.progressWrap.classList.remove("hidden");
+    setProgress(0);
+  } else {
+    els.progressWrap.classList.add("hidden");
+  }
+}
+
+function setBusy(busy) {
+  isBusy = busy;
+  els.btnProgram.disabled = busy || !esploader || !fileRows.some((r) => r.data);
+  els.btnErase.disabled = busy || !esploader;
+  els.btnReset.disabled = busy || !esploader;
+  els.btnConnect.disabled = busy;
+  els.btnDisconnect.disabled = busy;
+  els.btnAddFile.disabled = busy;
+}
+
 function checkSupport() {
   const supported = "serial" in navigator;
   if (!supported) {
@@ -88,9 +102,18 @@ function checkSupport() {
   return supported;
 }
 
-// ---------------------------------------------------------------------------
-// File rows
-// ---------------------------------------------------------------------------
+function parseAddress(str) {
+  const s = (str || "0x0").trim().toLowerCase();
+  if (s.startsWith("0x")) return parseInt(s, 16);
+  return parseInt(s, 10) || 0;
+}
+
+function updateProgramButton() {
+  if (isBusy) return;
+  const hasFiles = fileRows.some((r) => r.data);
+  els.btnProgram.disabled = !(esploader && hasFiles);
+}
+
 function addFileRow(defaultAddress = "0x10000") {
   const id = nextRowId++;
   const row = document.createElement("div");
@@ -104,7 +127,7 @@ function addFileRow(defaultAddress = "0x10000") {
       <button type="button" class="btn btn-secondary btn-sm btn-choose">Choose</button>
       <button type="button" class="btn-remove" title="Remove">×</button>
     </div>
-    <input type="file" accept=".bin,.hex,application/octet-stream" />
+    <input type="file" accept=".bin,application/octet-stream" />
   `;
 
   const addrInput = row.querySelector(".addr");
@@ -115,20 +138,26 @@ function addFileRow(defaultAddress = "0x10000") {
 
   const entry = { id, address: defaultAddress, file: null, data: null };
 
-  chooseBtn.addEventListener("click", () => fileInput.click());
+  chooseBtn.addEventListener("click", () => {
+    if (!isBusy) fileInput.click();
+  });
 
   fileInput.addEventListener("change", async () => {
-    const f = fileInput.files[0];
+    const f = fileInput.files?.[0];
     if (!f) return;
-    entry.file = f;
-    nameEl.textContent = f.name;
-    nameEl.classList.remove("empty");
-    nameEl.title = `${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
 
-    const buf = await f.arrayBuffer();
-    entry.data = new Uint8Array(buf);
-    log(`Loaded ${f.name} (${entry.data.length} bytes)`, "ok");
-    updateProgramButton();
+    try {
+      const buf = await f.arrayBuffer();
+      entry.data = new Uint8Array(buf);
+      entry.file = f;
+      nameEl.textContent = f.name;
+      nameEl.classList.remove("empty");
+      nameEl.title = `${f.name} (${(entry.data.length / 1024).toFixed(1)} KB)`;
+      log(`Loaded ${f.name} (${entry.data.length} bytes)`, "ok");
+      updateProgramButton();
+    } catch (err) {
+      log(`Failed to read file: ${err.message || err}`, "err");
+    }
   });
 
   addrInput.addEventListener("change", () => {
@@ -136,6 +165,7 @@ function addFileRow(defaultAddress = "0x10000") {
   });
 
   removeBtn.addEventListener("click", () => {
+    if (isBusy) return;
     row.remove();
     fileRows = fileRows.filter((r) => r.id !== id);
     updateProgramButton();
@@ -146,16 +176,9 @@ function addFileRow(defaultAddress = "0x10000") {
   updateProgramButton();
 }
 
-function updateProgramButton() {
-  const hasFiles = fileRows.some((r) => r.data);
-  const connected = !!esploader;
-  els.btnProgram.disabled = !(connected && hasFiles);
-}
-
-// ---------------------------------------------------------------------------
-// Connection
-// ---------------------------------------------------------------------------
 async function connect() {
+  if (isBusy) return;
+  setBusy(true);
   try {
     log("Requesting serial port…", "cmd");
     device = await navigator.serial.requestPort({});
@@ -169,22 +192,23 @@ async function connect() {
       debugLogging: false,
     });
 
+    log("Connecting and detecting chip…", "cmd");
     chip = await esploader.main();
 
     els.chipLabel.textContent = chip;
     els.chipLabel.classList.remove("hidden");
     els.btnConnect.classList.add("hidden");
     els.btnDisconnect.classList.remove("hidden");
-    els.btnErase.disabled = false;
-    els.btnReset.disabled = false;
     els.baudrate.disabled = true;
 
     log(`Connected to ${chip}`, "ok");
-    updateProgramButton();
   } catch (err) {
     log(`Connect failed: ${err.message || err}`, "err");
     console.error(err);
     await safeDisconnect();
+  } finally {
+    setBusy(false);
+    updateProgramButton();
   }
 }
 
@@ -194,6 +218,7 @@ async function safeDisconnect() {
       await transport.disconnect();
     }
   } catch (_) {}
+
   device = null;
   transport = null;
   esploader = null;
@@ -202,49 +227,25 @@ async function safeDisconnect() {
   els.chipLabel.classList.add("hidden");
   els.btnConnect.classList.remove("hidden");
   els.btnDisconnect.classList.add("hidden");
-  els.btnErase.disabled = true;
-  els.btnReset.disabled = true;
-  els.btnProgram.disabled = true;
   els.baudrate.disabled = false;
+  showProgress(false);
 }
 
 async function disconnect() {
+  if (isBusy) return;
   log("Disconnecting…", "cmd");
   await safeDisconnect();
   log("Disconnected", "info");
+  updateProgramButton();
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function parseAddress(str) {
-  const s = (str || "0x0").trim().toLowerCase();
-  if (s.startsWith("0x")) return parseInt(s, 16);
-  return parseInt(s, 10) || 0;
-}
-
-/**
- * Convert Uint8Array → binary string required by older/newer esptool-js writeFlash
- */
-function toBinaryString(u8) {
-  let s = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < u8.length; i += chunk) {
-    s += String.fromCharCode.apply(null, u8.subarray(i, i + chunk));
-  }
-  return s;
-}
-
-// ---------------------------------------------------------------------------
-// Program / Erase / Reset
-// ---------------------------------------------------------------------------
 async function program() {
-  if (!esploader) return;
+  if (!esploader || isBusy) return;
 
   const files = fileRows
-    .filter((r) => r.data)
+    .filter((r) => r.data instanceof Uint8Array && r.data.length > 0)
     .map((r) => ({
-      data: toBinaryString(r.data),
+      data: r.data,
       address: parseAddress(r.address),
     }));
 
@@ -255,6 +256,12 @@ async function program() {
 
   files.sort((a, b) => a.address - b.address);
 
+  const totalBytes = files.reduce((sum, f) => sum + f.data.length, 0);
+  log(`Flashing ${files.length} file(s), ${totalBytes} bytes total…`, "cmd");
+  files.forEach((f, i) => {
+    log(`  [${i + 1}] 0x${f.address.toString(16)} – ${f.data.length} bytes`, "info");
+  });
+
   const flashOptions = {
     fileArray: files,
     flashSize: els.flashSize.value,
@@ -263,62 +270,66 @@ async function program() {
     eraseAll: els.eraseAll.checked,
     compress: els.compress.checked,
     reportProgress: (fileIndex, written, total) => {
-      const pct = total ? ((written / total) * 100).toFixed(1) : "0";
-      const last = els.console.lastElementChild;
-      if (last && last.dataset.progress === "1") {
-        last.textContent = `[${new Date().toLocaleTimeString("en-GB", { hour12: false })}] Writing file ${fileIndex + 1}: ${pct}% (${written}/${total})`;
-      } else {
-        const line = document.createElement("div");
-        line.className = "log-cmd";
-        line.dataset.progress = "1";
-        line.textContent = `Writing file ${fileIndex + 1}: ${pct}%`;
-        els.console.appendChild(line);
-      }
-      els.console.scrollTop = els.console.scrollHeight;
+      const filePct = total ? written / total : 0;
+      let done = 0;
+      for (let i = 0; i < fileIndex; i++) done += files[i].data.length;
+      done += filePct * files[fileIndex].data.length;
+      const overall = totalBytes ? (done / totalBytes) * 100 : 0;
+      setProgress(overall);
     },
   };
 
-  els.btnProgram.disabled = true;
-  els.btnErase.disabled = true;
-  els.btnReset.disabled = true;
+  setBusy(true);
+  showProgress(true);
 
   try {
-    log("Starting flash…", "cmd");
     await esploader.writeFlash(flashOptions);
+    setProgress(100);
     log("Flash completed successfully!", "ok");
+
+    try {
+      await esploader.after("hard_reset");
+      log("Device reset – firmware should be running", "ok");
+    } catch (resetErr) {
+      log(`Post-flash reset note: ${resetErr.message || resetErr}`, "warn");
+    }
   } catch (err) {
     log(`Flash failed: ${err.message || err}`, "err");
     console.error(err);
   } finally {
-    els.btnProgram.disabled = false;
-    els.btnErase.disabled = false;
-    els.btnReset.disabled = false;
+    setBusy(false);
+    showProgress(false);
     updateProgramButton();
   }
 }
 
 async function eraseFlash() {
-  if (!esploader) return;
+  if (!esploader || isBusy) return;
   if (!confirm("Erase the entire flash? This cannot be undone.")) return;
 
-  els.btnErase.disabled = true;
-  els.btnProgram.disabled = true;
+  setBusy(true);
+  showProgress(true);
+  setProgress(10);
+
   try {
     log("Erasing flash…", "cmd");
     await esploader.eraseFlash();
+    setProgress(100);
     log("Flash erased", "ok");
   } catch (err) {
     log(`Erase failed: ${err.message || err}`, "err");
+    console.error(err);
   } finally {
-    els.btnErase.disabled = false;
+    setBusy(false);
+    showProgress(false);
     updateProgramButton();
   }
 }
 
 async function resetDevice() {
-  if (!transport) return;
+  if (!transport || isBusy) return;
   try {
-    log("Resetting device…", "cmd");
+    log("Sending reset pulse…", "cmd");
     await transport.setDTR(false);
     await new Promise((r) => setTimeout(r, 100));
     await transport.setDTR(true);
@@ -328,27 +339,28 @@ async function resetDevice() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Init
-// ---------------------------------------------------------------------------
 function init() {
   if (!checkSupport()) return;
 
-  // Pre-fill typical ESP32 layout (user can change / remove)
-  addFileRow("0x1000");  // bootloader
-  addFileRow("0x8000");  // partition table
-  addFileRow("0x10000"); // application
+  addFileRow("0x1000");
+  addFileRow("0x8000");
+  addFileRow("0x10000");
 
   els.btnConnect.addEventListener("click", connect);
   els.btnDisconnect.addEventListener("click", disconnect);
   els.btnProgram.addEventListener("click", program);
   els.btnErase.addEventListener("click", eraseFlash);
   els.btnReset.addEventListener("click", resetDevice);
-  els.btnAddFile.addEventListener("click", () => addFileRow("0x0"));
+  els.btnAddFile.addEventListener("click", () => {
+    if (!isBusy) addFileRow("0x0");
+  });
   els.btnClearLog.addEventListener("click", clearLog);
 
   log("ESPFlash ready. Connect your device to begin.", "info");
-  log("Supported chips: ESP8266, ESP32, ESP32-S2/S3, ESP32-C2/C3/C5/C6, ESP32-H2, ESP32-P4", "info");
+  log(
+    "Supported: ESP8266, ESP32, ESP32-S2/S3, ESP32-C2/C3/C5/C6, ESP32-H2, ESP32-P4",
+    "info"
+  );
 }
 
 init();
