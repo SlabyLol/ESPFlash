@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ESPFlash – Flash ESP32 and ESP8266 firmware from your browser using Web Serial." />
+  <meta name="theme-color" content="#0f172a" />
+  <title>ESPFlash – Browser ESP Flasher</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Unsupported browser screen -->
+  <div id="unsupported" class="overlay hidden">
+    <div class="unsupported-card">
+      <div class="logo-large">
+        <svg viewBox="0 0 64 64" width="72" height="72" aria-hidden="true">
+          <path fill="#38bdf8" d="M32 4 L28 28 L12 28 L32 60 L36 36 L52 36 Z"/>
+        </svg>
+      </div>
+      <h1>Browser Not Supported</h1>
+      <p>
+        ESPFlash requires the <strong>Web Serial API</strong>.
+        Please use a recent desktop version of
+        <strong>Google Chrome</strong>, <strong>Microsoft Edge</strong> or <strong>Opera</strong>.
+      </p>
+      <p class="hint">Safari, Firefox and most mobile browsers are not supported.</p>
+      <a class="btn btn-primary" href="https://www.google.com/chrome/" target="_blank" rel="noopener">Get Chrome</a>
+    </div>
+  </div>
+
+  <header class="header">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 64 64" width="36" height="36" aria-hidden="true">
+        <path fill="currentColor" d="M32 4 L28 28 L12 28 L32 60 L36 36 L52 36 Z"/>
+      </svg>
+      <div>
+        <h1>ESPFlash</h1>
+        <p class="tagline">Flash ESP chips from your browser</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="chip-label" class="chip-badge hidden">—</span>
+      <button id="btn-connect" class="btn btn-primary">Connect</button>
+      <button id="btn-disconnect" class="btn btn-ghost hidden">Disconnect</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="panel settings-panel">
+      <h2>Flash Settings</h2>
+
+      <div class="grid-2">
+        <label>
+          Baud rate
+          <select id="baudrate">
+            <option value="115200">115200</option>
+            <option value="230400">230400</option>
+            <option value="460800">460800</option>
+            <option value="921600" selected>921600</option>
+            <option value="1500000">1500000</option>
+          </select>
+        </label>
+
+        <label>
+          Flash mode
+          <select id="flash-mode">
+            <option value="keep">keep</option>
+            <option value="qio">qio</option>
+            <option value="qout">qout</option>
+            <option value="dio" selected>dio</option>
+            <option value="dout">dout</option>
+          </select>
+        </label>
+
+        <label>
+          Flash frequency
+          <select id="flash-freq">
+            <option value="keep">keep</option>
+            <option value="40m" selected>40m</option>
+            <option value="26m">26m</option>
+            <option value="20m">20m</option>
+            <option value="80m">80m</option>
+          </select>
+        </label>
+
+        <label>
+          Flash size
+          <select id="flash-size">
+            <option value="keep">keep</option>
+            <option value="256KB">256KB</option>
+            <option value="512KB">512KB</option>
+            <option value="1MB">1MB</option>
+            <option value="2MB">2MB</option>
+            <option value="4MB" selected>4MB</option>
+            <option value="8MB">8MB</option>
+            <option value="16MB">16MB</option>
+            <option value="32MB">32MB</option>
+            <option value="64MB">64MB</option>
+            <option value="128MB">128MB</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="options-row">
+        <label class="checkbox">
+          <input type="checkbox" id="erase-all" />
+          Erase flash before writing
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="compress" checked />
+          Compress
+        </label>
+      </div>
+    </section>
+
+    <section class="panel files-panel">
+      <div class="panel-header">
+        <h2>Firmware Files</h2>
+        <button id="btn-add-file" class="btn btn-secondary btn-sm">+ Add File</button>
+      </div>
+
+      <div id="file-list" class="file-list">
+        <!-- rows injected by JS -->
+      </div>
+
+      <p class="hint">
+        Add one or more <code>.bin</code> files and set their flash addresses.
+        Typical ESP32 layout: bootloader <code>0x1000</code>, partition table <code>0x8000</code>, application <code>0x10000</code>.
+        A single merged image usually goes to <code>0x0</code>.
+      </p>
+    </section>
+
+    <section class="panel actions-panel">
+      <button id="btn-program" class="btn btn-primary btn-lg" disabled>Program</button>
+      <button id="btn-erase" class="btn btn-danger" disabled>Erase Flash</button>
+      <button id="btn-reset" class="btn btn-ghost" disabled>Reset Device</button>
+    </section>
+
+    <section class="panel console-panel">
+      <div class="panel-header">
+        <h2>Log Console</h2>
+        <div class="console-actions">
+          <button id="btn-clear-log" class="btn btn-ghost btn-sm">Clear</button>
+        </div>
+      </div>
+      <div id="console" class="console" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>
+      ESPFlash uses
+      <a href="https://github.com/espressif/esptool-js" target="_blank" rel="noopener">esptool-js</a>
+      by Espressif. Runs entirely in your browser – firmware never leaves your device.
+    </p>
+    <p class="footer-note">GitHub Pages ready · Open source</p>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
