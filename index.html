@@ -8,6 +8,16 @@
   <title>ESPFlash – Browser ESP Flasher</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="css/style.css" />
+
+  <!-- Import map required by esptool-js unbundled ESM build -->
+  <script type="importmap">
+  {
+    "imports": {
+      "pako": "https://unpkg.com/pako@2.1.0/dist/pako.esm.mjs",
+      "atob-lite": "https://unpkg.com/atob-lite@2.0.0/atob-browser.js"
+    }
+  }
+  </script>
 </head>
 <body>
   <!-- Unsupported browser screen -->
@@ -87,12 +97,13 @@
         <label>
           Flash size
           <select id="flash-size">
-            <option value="keep">keep</option>
+            <option value="keep" selected>keep</option>
+            <option value="detect">detect</option>
             <option value="256KB">256KB</option>
             <option value="512KB">512KB</option>
             <option value="1MB">1MB</option>
             <option value="2MB">2MB</option>
-            <option value="4MB" selected>4MB</option>
+            <option value="4MB">4MB</option>
             <option value="8MB">8MB</option>
             <option value="16MB">16MB</option>
             <option value="32MB">32MB</option>
@@ -120,9 +131,7 @@
         <button id="btn-add-file" class="btn btn-secondary btn-sm">+ Add File</button>
       </div>
 
-      <div id="file-list" class="file-list">
-        <!-- rows injected by JS -->
-      </div>
+      <div id="file-list" class="file-list"></div>
 
       <p class="hint">
         Add one or more <code>.bin</code> files and set their flash addresses.
@@ -136,6 +145,11 @@
       <button id="btn-erase" class="btn btn-danger" disabled>Erase Flash</button>
       <button id="btn-reset" class="btn btn-ghost" disabled>Reset Device</button>
     </section>
+
+    <div id="progress-wrap" class="progress-wrap hidden">
+      <div class="progress-bar"><div id="progress-fill"></div></div>
+      <div id="progress-text" class="progress-text">0%</div>
+    </div>
 
     <section class="panel console-panel">
       <div class="panel-header">
